@@ -14,5 +14,18 @@
   },
   "devDependencies": {
     "vite": "^5.4.8"
-  }
+  },
+  "description": "You are given a deliberately **badly written React e-commerce admin module** that simulates real-world behavior:\r - order creation\r - pricing/discount logic\r - payment branching\r - notification side-effects\r - local persistence\r - reporting/export",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gourishettylikith/solid-code-bad-to-good.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gourishettylikith/solid-code-bad-to-good/issues"
+  },
+  "homepage": "https://github.com/gourishettylikith/solid-code-bad-to-good#readme"
 }
