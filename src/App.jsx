@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 
 // INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
 export default function App() {
+  
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
   const [qty, setQty] = useState(1);
