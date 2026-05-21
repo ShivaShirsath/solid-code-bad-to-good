@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { LocalStorageOrderRepository } from "./services/orderRepository";
+import { LocalStorageOrderRepository } from "../repositories/orderRepository";
 import {
   CardPaymentProcessor,
   CashOnDeliveryProcessor,
   PaypalPaymentProcessor,
   PaymentService,
-} from "./services/paymentService";
-import { NotificationService } from "./services/notificationService";
-import { OrderApplicationService } from "./services/orderApplicationService";
+} from "../services/paymentService";
+import { NotificationService } from "../services/notificationService";
+import { OrderApplicationService } from "../services/orderApplicationService";
 
 const orderRepository = new LocalStorageOrderRepository();
 const paymentService = new PaymentService({
