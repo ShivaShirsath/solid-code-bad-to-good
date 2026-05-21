@@ -1,6 +1,27 @@
 import React, { useEffect, useState } from "react";
+import { LocalStorageOrderRepository } from "./services/orderRepository";
+import {
+  CardPaymentProcessor,
+  CashOnDeliveryProcessor,
+  PaypalPaymentProcessor,
+  PaymentService,
+} from "./services/paymentService";
+import { NotificationService } from "./services/notificationService";
+import { OrderApplicationService } from "./services/orderApplicationService";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
+const orderRepository = new LocalStorageOrderRepository();
+const paymentService = new PaymentService({
+  card: new CardPaymentProcessor(),
+  paypal: new PaypalPaymentProcessor(),
+  cod: new CashOnDeliveryProcessor(),
+});
+const notificationService = new NotificationService();
+const orderApplicationService = new OrderApplicationService({
+  repository: orderRepository,
+  paymentService,
+  notificationService,
+});
+
 export default function App() {
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
@@ -10,79 +31,34 @@ export default function App() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("orders");
-    if (stored) setOrders(JSON.parse(stored));
+    setOrders(orderRepository.loadOrders());
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
-  }, [orders]);
-
   function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
+    try {
+      const { orders: nextOrders, message } = orderApplicationService.placeOrder({
+        user,
+        item,
+        qty,
+        payment,
+      });
 
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
-
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
-      setMessage("Payment failed");
-      return;
+      setOrders(nextOrders);
+      setMessage(message);
+    } catch (error) {
+      setMessage(error.message || "Payment failed");
     }
-
-    const newOrder = {
-      id: Date.now(),
-      user,
-      item,
-      qty: Number(qty),
-      total,
-      status: "PLACED"
-    };
-
-    setOrders([...orders, newOrder]);
-
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
-
-    setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
   }
 
   function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
-      }
-      return o;
-    });
-    setOrders(next);
-    setMessage(`Refund attempted for ${orderId}`);
+    const { orders: nextOrders, message } = orderApplicationService.refundOrder(orderId);
+    setOrders(nextOrders);
+    setMessage(message);
   }
 
   function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const { csv, revenue } = orderApplicationService.exportReport();
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
