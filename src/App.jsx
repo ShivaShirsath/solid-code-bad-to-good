@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
+import { OrderForm } from "./components/OrderForm";
+import { OrdersList } from "./components/OrdersList";
+import { OrderRepository } from "./services/orderRepository";
+import { calculateOrderTotal } from "./services/priceCalculator";
+import { getPaymentProcessor } from "./payments/paymentProcessorFactory";
+import { notifyOrderCreated, sendSms } from "./services/notificationService";
+import { exportOrderReport } from "./services/reportExporter";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
 export default function App() {
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
@@ -10,151 +16,80 @@ export default function App() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("orders");
-    if (stored) setOrders(JSON.parse(stored));
+    setOrders(OrderRepository.load());
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
+    OrderRepository.save(orders);
   }, [orders]);
 
-  function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
+  async function buyNow() {
+    const quantity = Number(qty);
+    const total = calculateOrderTotal(item, quantity, user);
 
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
-
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
-      setMessage("Payment failed");
+    const paymentProcessor = getPaymentProcessor(payment);
+    if (!paymentProcessor) {
+      setMessage("Payment method is not supported.");
       return;
     }
 
-    const newOrder = {
+    const order = {
       id: Date.now(),
       user,
       item,
-      qty: Number(qty),
+      qty: quantity,
       total,
       status: "PLACED"
     };
 
-    setOrders([...orders, newOrder]);
+    const result = await paymentProcessor.process(order);
+    if (!result.success) {
+      setMessage(result.message || "Payment failed.");
+      return;
+    }
 
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
-
-    setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
+    setOrders((prevOrders) => [...prevOrders, order]);
+    notifyOrderCreated(order);
+    sendSms(user, `Order ${order.id} placed`);
+    setMessage(`Order ${order.id} placed. Total: ${order.total}`);
   }
 
   function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
-      }
-      return o;
-    });
-    setOrders(next);
+    setOrders((prevOrders) =>
+      prevOrders.map((order) => {
+        if (order.id === orderId && order.status !== "REFUNDED") {
+          return { ...order, status: "REFUNDED" };
+        }
+        return order;
+      })
+    );
     setMessage(`Refund attempted for ${orderId}`);
   }
 
   function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orders_export.csv";
-    a.click();
-
+    const revenue = exportOrderReport(orders);
     setMessage(`Revenue: ${revenue}`);
   }
 
   return (
     <div className="page">
-      <h1>Bad Commerce Admin</h1>
-      <p>Intentionally bad architecture for SOLID refactoring exercise.</p>
+      <h1>Commerce Admin (SOLID)</h1>
+      <p>Refactored into separate services, adapters, and UI components.</p>
 
-      <div className="card">
-        <h2>Create Order</h2>
-        <label>User</label>
-        <input value={user} onChange={(e) => setUser(e.target.value)} />
+      <OrderForm
+        user={user}
+        item={item}
+        qty={qty}
+        payment={payment}
+        onUserChange={setUser}
+        onItemChange={setItem}
+        onQtyChange={setQty}
+        onPaymentChange={setPayment}
+        onBuy={buyNow}
+        onExport={exportReport}
+      />
 
-        <label>Item</label>
-        <select value={item} onChange={(e) => setItem(e.target.value)}>
-          <option value="laptop">laptop</option>
-          <option value="phone">phone</option>
-          <option value="headset">headset</option>
-          <option value="misc">misc</option>
-        </select>
-
-        <label>Qty</label>
-        <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
-
-        <label>Payment</label>
-        <select value={payment} onChange={(e) => setPayment(e.target.value)}>
-          <option value="card">card</option>
-          <option value="paypal">paypal</option>
-          <option value="cod">cod</option>
-        </select>
-
-        <button onClick={buyNow}>Buy</button>
-        <button onClick={exportReport}>Export CSV + Revenue</button>
-      </div>
-
-      <div className="card">
-        <h2>Orders</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>User</th>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>{o.id}</td>
-                <td>{o.user}</td>
-                <td>{o.item}</td>
-                <td>{o.qty}</td>
-                <td>{o.total}</td>
-                <td>{o.status}</td>
-                <td>
-                  <button onClick={() => refund(o.id)}>Refund</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <OrdersList orders={orders} onRefund={refund} />
 
       <p className="message">{message}</p>
     </div>
