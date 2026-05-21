@@ -1,6 +1,19 @@
 import React, { useEffect, useState } from "react";
+import {
+  getItemPrice,
+  calculateTotal,
+  processPayment,
+  notifyCustomer,
+  createOrder,
+  refundOrder,
+  StorageService,
+  exportCSV,
+  calculateRevenue,
+  getAvailablePaymentMethods
+} from "./services";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
+// SOLID: App is now UI-only, delegates all business logic to services
+// Follows: SRP (UI concerns only), DIP (depends on service abstractions)
 export default function App() {
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
@@ -9,93 +22,69 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [message, setMessage] = useState("");
 
+  // Load orders from storage on mount
   useEffect(() => {
-    const stored = localStorage.getItem("orders");
-    if (stored) setOrders(JSON.parse(stored));
+    const stored = StorageService.get("orders");
+    if (stored) {
+      setOrders(stored);
+    }
   }, []);
 
+  // Persist orders to storage when they change
   useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
+    if (orders.length > 0) {
+      StorageService.set("orders", orders);
+    }
   }, [orders]);
 
-  function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
+  function handleBuyNow() {
+    // Get item price from pricing service
+    const price = getItemPrice(item);
 
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
+    // Calculate total with discounts
+    const total = calculateTotal(price, qty, user);
 
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
+    // Process payment
+    const paymentResult = processPayment(payment, total);
+    if (!paymentResult.success) {
       setMessage("Payment failed");
       return;
     }
 
-    const newOrder = {
-      id: Date.now(),
+    // Create order through order service
+    const newOrder = createOrder({
       user,
       item,
-      qty: Number(qty),
+      qty,
+      price,
       total,
-      status: "PLACED"
-    };
+      payment
+    });
 
+    // Update orders state
     setOrders([...orders, newOrder]);
 
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
-
-    setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
+    // Send notification
+    const notificationMessage = notifyCustomer(user, newOrder.id, total, ['email', 'sms']);
+    setMessage(`Order ${newOrder.id} placed. Total: $${total}`);
   }
 
-  function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
-      }
-      return o;
-    });
-    setOrders(next);
-    setMessage(`Refund attempted for ${orderId}`);
+  function handleRefund(orderId) {
+    const updatedOrders = refundOrder(orderId, orders);
+    setOrders(updatedOrders);
+    setMessage(`Refund processed for order ${orderId}`);
   }
 
-  function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orders_export.csv";
-    a.click();
-
-    setMessage(`Revenue: ${revenue}`);
+  function handleExportReport() {
+    exportCSV(orders);
+    const revenue = calculateRevenue(orders);
+    setMessage(`Report exported. Total revenue: $${revenue.toFixed(2)}`);
   }
 
   return (
     <div className="page">
-      <h1>Bad Commerce Admin</h1>
-      <p>Intentionally bad architecture for SOLID refactoring exercise.</p>
+      <h1>E-Commerce Admin</h1>
+      <p>SOLID principles refactored architecture.</p>
 
       <div className="card">
         <h2>Create Order</h2>
@@ -104,24 +93,26 @@ export default function App() {
 
         <label>Item</label>
         <select value={item} onChange={(e) => setItem(e.target.value)}>
-          <option value="laptop">laptop</option>
-          <option value="phone">phone</option>
-          <option value="headset">headset</option>
-          <option value="misc">misc</option>
+          <option value="laptop">Laptop</option>
+          <option value="phone">Phone</option>
+          <option value="headset">Headset</option>
+          <option value="misc">Misc</option>
         </select>
 
-        <label>Qty</label>
+        <label>Quantity</label>
         <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
 
-        <label>Payment</label>
+        <label>Payment Method</label>
         <select value={payment} onChange={(e) => setPayment(e.target.value)}>
-          <option value="card">card</option>
-          <option value="paypal">paypal</option>
-          <option value="cod">cod</option>
+          {getAvailablePaymentMethods().map((method) => (
+            <option key={method} value={method}>
+              {method.charAt(0).toUpperCase() + method.slice(1)}
+            </option>
+          ))}
         </select>
 
-        <button onClick={buyNow}>Buy</button>
-        <button onClick={exportReport}>Export CSV + Revenue</button>
+        <button onClick={handleBuyNow}>Buy Now</button>
+        <button onClick={handleExportReport}>Export Report</button>
       </div>
 
       <div className="card">
@@ -145,10 +136,15 @@ export default function App() {
                 <td>{o.user}</td>
                 <td>{o.item}</td>
                 <td>{o.qty}</td>
-                <td>{o.total}</td>
+                <td>${o.total.toFixed(2)}</td>
                 <td>{o.status}</td>
                 <td>
-                  <button onClick={() => refund(o.id)}>Refund</button>
+                  <button
+                    onClick={() => handleRefund(o.id)}
+                    disabled={o.status === "REFUNDED"}
+                  >
+                    Refund
+                  </button>
                 </td>
               </tr>
             ))}
@@ -156,7 +152,7 @@ export default function App() {
         </table>
       </div>
 
-      <p className="message">{message}</p>
+      {message && <p className="message">{message}</p>}
     </div>
   );
 }
