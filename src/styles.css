@@ -18,6 +18,18 @@ body {
   border-radius: 8px;
 }
 
+/* Row inside a card that puts a heading and a button side-by-side */
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.table-header h2 {
+  margin: 0;
+}
+
 label {
   display: block;
   margin-top: 10px;
@@ -32,6 +44,11 @@ button {
   padding: 8px;
 }
 
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -44,6 +61,12 @@ td {
   text-align: left;
 }
 
+tr.refunded td {
+  color: #999;
+  text-decoration: line-through;
+}
+
 .message {
   font-weight: bold;
+  padding: 8px 0;
 }
