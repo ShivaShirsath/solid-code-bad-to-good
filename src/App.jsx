@@ -1,94 +1,52 @@
 import React, { useEffect, useState } from "react";
+import { calculateOrderTotal } from "./services/pricing";
+import { processPayment } from "./services/payments";
+import { loadOrders, saveOrders } from "./services/storage";
+import { createOrder, refundOrder } from "./services/orders";
+import {
+  buildOrdersCsv,
+  calculateRevenue,
+  downloadTextFile,
+} from "./services/reporting";
+import { sendOrderNotifications } from "./services/notifications";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
 export default function App() {
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
   const [qty, setQty] = useState(1);
   const [payment, setPayment] = useState("card");
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => loadOrders());
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("orders");
-    if (stored) setOrders(JSON.parse(stored));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
+    saveOrders(orders);
   }, [orders]);
 
   function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
-
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
-
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
+    const paymentResult = processPayment(payment);
+    if (!paymentResult.ok) {
       setMessage("Payment failed");
       return;
     }
 
-    const newOrder = {
-      id: Date.now(),
-      user,
-      item,
-      qty: Number(qty),
-      total,
-      status: "PLACED"
-    };
+    const total = calculateOrderTotal(user, item, qty);
+    const newOrder = createOrder({ user, item, qty, total });
 
-    setOrders([...orders, newOrder]);
-
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
+    setOrders((currentOrders) => [...currentOrders, newOrder]);
+    sendOrderNotifications(newOrder);
 
     setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
   }
 
   function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
-      }
-      return o;
-    });
-    setOrders(next);
+    setOrders((currentOrders) => refundOrder(currentOrders, orderId));
     setMessage(`Refund attempted for ${orderId}`);
   }
 
   function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orders_export.csv";
-    a.click();
-
+    const revenue = calculateRevenue(orders);
+    const csv = buildOrdersCsv(orders);
+    downloadTextFile("orders_export.csv", csv, "text/csv");
     setMessage(`Revenue: ${revenue}`);
   }
 
