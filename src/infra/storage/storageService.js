@@ -1,5 +1,5 @@
-// Simple storage wrapper to abstract localStorage access.
-// SOLID: Dependency Inversion - higher-level modules depend on this abstraction
+// Storage is isolated in the infra layer because it depends on the browser environment.
+// SOLID: Dependency Inversion - higher layers depend on this abstraction, not localStorage directly.
 export default class StorageService {
   constructor(namespace = "orders") {
     this.namespace = namespace;

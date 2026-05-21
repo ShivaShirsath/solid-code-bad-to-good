@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 
 // Refactored to follow SOLID principles. See inline comments for rationale.
-import StorageService from "./services/storageService";
-import PaymentService from "./services/paymentService";
-import NotificationService from "./services/notificationService";
+import OrderForm from "./components/OrderForm";
+import OrdersTable from "./components/OrdersTable";
+import StorageService from "./infra/storage/storageService";
+import PaymentService from "./payments/paymentService";
+import { defaultPaymentStrategies } from "./payments/defaultStrategies";
+import NotificationService from "./infra/notification/notificationService";
 import OrderService from "./services/orderService";
 import ReportService from "./services/reportService";
 
@@ -11,21 +14,7 @@ import ReportService from "./services/reportService";
 // Placing these at module level avoids recreating them on each render.
 const storage = new StorageService();
 
-const payment = new PaymentService({
-  card: ({ total }) => {
-    // In a real app this would call a payment gateway SDK.
-    console.log("Card gateway called for", total);
-    return true;
-  },
-  paypal: ({ total }) => {
-    console.log("PayPal gateway called for", total);
-    return true;
-  },
-  cod: () => {
-    console.log("Cash on delivery selected");
-    return true;
-  }
-});
+const payment = new PaymentService(defaultPaymentStrategies);
 
 const notification = new NotificationService();
 const orderService = new OrderService({ storage, payment, notification });
@@ -77,66 +66,22 @@ export default function App() {
   return (
     <div className="page">
       <h1>Commerce Admin (Refactored for SOLID)</h1>
-      <p>Component now focuses on UI; services handle business and infra.</p>
+      <p>UI lives in components; services, payments, utils, and infra are now separated by folder.</p>
 
-      <div className="card">
-        <h2>Create Order</h2>
-        <label>User</label>
-        <input value={user} onChange={(e) => setUser(e.target.value)} />
+      <OrderForm
+        user={user}
+        item={item}
+        qty={qty}
+        paymentMethod={paymentMethod}
+        onUserChange={setUser}
+        onItemChange={setItem}
+        onQtyChange={setQty}
+        onPaymentMethodChange={setPaymentMethod}
+        onBuy={buyNow}
+        onExport={exportReport}
+      />
 
-        <label>Item</label>
-        <select value={item} onChange={(e) => setItem(e.target.value)}>
-          <option value="laptop">laptop</option>
-          <option value="phone">phone</option>
-          <option value="headset">headset</option>
-          <option value="misc">misc</option>
-        </select>
-
-        <label>Qty</label>
-        <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
-
-        <label>Payment</label>
-        <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-          <option value="card">card</option>
-          <option value="paypal">paypal</option>
-          <option value="cod">cod</option>
-        </select>
-
-        <button onClick={buyNow}>Buy</button>
-        <button onClick={exportReport}>Export CSV + Revenue</button>
-      </div>
-
-      <div className="card">
-        <h2>Orders</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>User</th>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>{o.id}</td>
-                <td>{o.user}</td>
-                <td>{o.item}</td>
-                <td>{o.qty}</td>
-                <td>{o.total}</td>
-                <td>{o.status}</td>
-                <td>
-                  <button onClick={() => refund(o.id)}>Refund</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <OrdersTable orders={orders} onRefund={refund} />
 
       <p className="message">{message}</p>
     </div>

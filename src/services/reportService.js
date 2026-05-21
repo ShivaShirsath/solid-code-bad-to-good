@@ -1,3 +1,5 @@
+import { calculateRevenue } from "../utils/orderMath";
+
 // ReportService handles exports and revenue calculations.
 // SOLID: Single Responsibility - report generation separated from UI and order logic.
 export default class ReportService {
@@ -16,6 +18,6 @@ export default class ReportService {
   }
 
   revenue(orders) {
-    return orders.reduce((acc, o) => (o.status !== "REFUNDED" ? acc + o.total : acc), 0);
+    return calculateRevenue(orders);
   }
 }

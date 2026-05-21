@@ -1,3 +1,5 @@
+import { applyDiscount, getItemPrice } from "../utils/orderMath";
+
 // OrderService manages order creation and refunds.
 // SOLID principles applied:
 // - Single Responsibility: this class only manages order-related business rules.
@@ -12,18 +14,13 @@ export default class OrderService {
   }
 
   _priceForItem(item) {
-    // Keep pricing logic here so UI doesn't need to know prices.
-    if (item === "laptop") return 1000;
-    if (item === "phone") return 500;
-    if (item === "headset") return 50;
-    return 20;
+    // Pricing lives in a pure utility so it can be reused and tested separately.
+    return getItemPrice(item);
   }
 
   _applyDiscount(total, user, qty) {
-    // Simple promo rules kept in service (single responsibility)
-    if (user === "vip") return total * 0.7;
-    if (Number(qty) > 10) return total * 0.85;
-    return total;
+    // Discount rules are also kept in a pure utility for easy testing.
+    return applyDiscount(total, user, qty);
   }
 
   getAll() {
