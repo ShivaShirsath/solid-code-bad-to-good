@@ -1,6 +1,54 @@
 import React, { useEffect, useState } from "react";
+import { processPayment } from "./services/payment";
+import { calculateTotal } from "./services/order";
+import OrderForm from "./orders/OrderForm";
+import OrdersTable from "./orders/OrderTable";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
+function sendConfirmation(order) {
+  fetch("https://httpbin.org/post", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: `${order.user}@mail.com`,
+      text: `Order ${order.id} confirmed`
+    })
+  }).catch(() => { });
+
+  alert(`SMS to ${order.user}: Order ${order.id} placed`);
+}
+
+function createCsv(orders) {
+  const lines = ["id,user,item,qty,total,status"];
+
+  orders.forEach((order) => {
+    lines.push(`${order.id},${order.user},${order.item},${order.qty},${order.total},${order.status}`);
+  });
+
+  return lines.join("\n");
+}
+
+function calculateRevenue(orders) {
+  let revenue = 0;
+
+  orders.forEach((order) => {
+    if (order.status !== "REFUNDED") revenue += order.total;
+  });
+
+  return revenue;
+}
+
+function downloadCsv(csv) {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = "orders_export.csv";
+  a.click();
+}
+
+
+
 export default function App() {
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
@@ -19,22 +67,10 @@ export default function App() {
   }, [orders]);
 
   function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
+    const orderQty = Number(qty);
+    const total = calculateTotal(item, orderQty, user);
 
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
-
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
+    if (!processPayment(payment)) {
       setMessage("Payment failed");
       return;
     }
@@ -43,53 +79,32 @@ export default function App() {
       id: Date.now(),
       user,
       item,
-      qty: Number(qty),
+      qty: orderQty,
       total,
       status: "PLACED"
     };
 
     setOrders([...orders, newOrder]);
-
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
-
+    sendConfirmation(newOrder);
     setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
   }
 
   function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
+    const next = orders.map((order) => {
+      if (order.id === orderId && order.status !== "REFUNDED") {
+        return { ...order, status: "REFUNDED" };
       }
-      return o;
+
+      return order;
     });
+
     setOrders(next);
     setMessage(`Refund attempted for ${orderId}`);
   }
 
   function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orders_export.csv";
-    a.click();
-
-    setMessage(`Revenue: ${revenue}`);
+    downloadCsv(createCsv(orders));
+    setMessage(`Revenue: ${calculateRevenue(orders)}`);
   }
 
   return (
@@ -97,64 +112,20 @@ export default function App() {
       <h1>Bad Commerce Admin</h1>
       <p>Intentionally bad architecture for SOLID refactoring exercise.</p>
 
-      <div className="card">
-        <h2>Create Order</h2>
-        <label>User</label>
-        <input value={user} onChange={(e) => setUser(e.target.value)} />
+      <OrderForm
+        user={user}
+        item={item}
+        qty={qty}
+        payment={payment}
+        onUserChange={setUser}
+        onItemChange={setItem}
+        onQtyChange={setQty}
+        onPaymentChange={setPayment}
+        onBuy={buyNow}
+        onExport={exportReport}
+      />
 
-        <label>Item</label>
-        <select value={item} onChange={(e) => setItem(e.target.value)}>
-          <option value="laptop">laptop</option>
-          <option value="phone">phone</option>
-          <option value="headset">headset</option>
-          <option value="misc">misc</option>
-        </select>
-
-        <label>Qty</label>
-        <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
-
-        <label>Payment</label>
-        <select value={payment} onChange={(e) => setPayment(e.target.value)}>
-          <option value="card">card</option>
-          <option value="paypal">paypal</option>
-          <option value="cod">cod</option>
-        </select>
-
-        <button onClick={buyNow}>Buy</button>
-        <button onClick={exportReport}>Export CSV + Revenue</button>
-      </div>
-
-      <div className="card">
-        <h2>Orders</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>User</th>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>{o.id}</td>
-                <td>{o.user}</td>
-                <td>{o.item}</td>
-                <td>{o.qty}</td>
-                <td>{o.total}</td>
-                <td>{o.status}</td>
-                <td>
-                  <button onClick={() => refund(o.id)}>Refund</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <OrdersTable orders={orders} onRefund={refund} />
 
       <p className="message">{message}</p>
     </div>
