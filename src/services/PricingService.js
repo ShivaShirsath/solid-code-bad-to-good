@@ -8,7 +8,7 @@ const ITEM_PRICES = {
 
 const USER_DISCOUNTS = {
   vip: 0.7, // 30% discount
-  regular: 1.0,
+  regular: 0.9,
 };
 
 export class PricingService {
@@ -27,7 +27,7 @@ export class PricingService {
     // The original logic was:
     // if (user === "vip") total *= 0.7;
     // else if (Number(qty) > 10) total *= 0.85;
-    if (userType !== "vip" && Number(qty) > 10) {
+    if (userType !== "vip" && Number(qty) >= 10) {
       total *= 0.85;
     }
 
