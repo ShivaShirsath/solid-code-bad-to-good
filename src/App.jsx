@@ -1,101 +1,83 @@
 import React, { useEffect, useState } from "react";
 
-// INTENTIONALLY BAD: massive component with UI + business logic + infra + reports + notifications + storage.
+// Refactored to follow SOLID principles. See inline comments for rationale.
+import StorageService from "./services/storageService";
+import PaymentService from "./services/paymentService";
+import NotificationService from "./services/notificationService";
+import OrderService from "./services/orderService";
+import ReportService from "./services/reportService";
+
+// Create concrete implementations / strategies once.
+// Placing these at module level avoids recreating them on each render.
+const storage = new StorageService();
+
+const payment = new PaymentService({
+  card: ({ total }) => {
+    // In a real app this would call a payment gateway SDK.
+    console.log("Card gateway called for", total);
+    return true;
+  },
+  paypal: ({ total }) => {
+    console.log("PayPal gateway called for", total);
+    return true;
+  },
+  cod: () => {
+    console.log("Cash on delivery selected");
+    return true;
+  }
+});
+
+const notification = new NotificationService();
+const orderService = new OrderService({ storage, payment, notification });
+const reportService = new ReportService();
+
 export default function App() {
+  // UI state only: values and a local copy of orders for rendering.
+  // Single Responsibility: this component now only handles rendering and user interactions.
   const [user, setUser] = useState("vip");
   const [item, setItem] = useState("laptop");
   const [qty, setQty] = useState(1);
-  const [payment, setPayment] = useState("card");
+  const [paymentMethod, setPaymentMethod] = useState("card");
   const [orders, setOrders] = useState([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("orders");
-    if (stored) setOrders(JSON.parse(stored));
+    // load orders from storage via OrderService (Dependency Inversion)
+    setOrders(orderService.getAll());
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
-  }, [orders]);
-
   function buyNow() {
-    let price = 20;
-    if (item === "laptop") price = 1000;
-    else if (item === "phone") price = 500;
-    else if (item === "headset") price = 50;
-
-    let total = price * Number(qty);
-    if (user === "vip") total *= 0.7;
-    else if (Number(qty) > 10) total *= 0.85;
-
-    if (payment === "card") {
-      console.log("Calling card gateway directly");
-    } else if (payment === "paypal") {
-      console.log("Calling paypal API directly");
-    } else if (payment === "cod") {
-      console.log("Cash on delivery");
-    } else {
+    // Delegate business logic and side effects to OrderService.
+    // This keeps the UI open for extension (Open/Closed) and smaller (Single Responsibility).
+    const result = orderService.createOrder({ user, item, qty, paymentMethod });
+    if (!result.success) {
       setMessage("Payment failed");
       return;
     }
 
-    const newOrder = {
-      id: Date.now(),
-      user,
-      item,
-      qty: Number(qty),
-      total,
-      status: "PLACED"
-    };
-
-    setOrders([...orders, newOrder]);
-
-    // fake external side effects inside UI
-    fetch("https://httpbin.org/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: `${user}@mail.com`, text: `Order ${newOrder.id} confirmed` })
-    }).catch(() => {});
-
-    alert(`SMS to ${user}: Order ${newOrder.id} placed`);
-
-    setMessage(`Order ${newOrder.id} placed. Total: ${total}`);
+    // refresh local orders from storage implementation
+    setOrders(orderService.getAll());
+    setMessage(`Order ${result.order.id} placed. Total: ${result.order.total}`);
   }
 
   function refund(orderId) {
-    const next = orders.map((o) => {
-      if (o.id === orderId && o.status !== "REFUNDED") {
-        return { ...o, status: "REFUNDED" };
-      }
-      return o;
-    });
-    setOrders(next);
+    // Refund is handled by OrderService; UI doesn't mutate order shape directly.
+    orderService.refund(orderId);
+    setOrders(orderService.getAll());
     setMessage(`Refund attempted for ${orderId}`);
   }
 
   function exportReport() {
-    let revenue = 0;
-    const lines = ["id,user,item,qty,total,status"];
-
-    orders.forEach((o) => {
-      if (o.status !== "REFUNDED") revenue += o.total;
-      lines.push(`${o.id},${o.user},${o.item},${o.qty},${o.total},${o.status}`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orders_export.csv";
-    a.click();
-
-    setMessage(`Revenue: ${revenue}`);
+    // Report generation delegated to ReportService (Single Responsibility)
+    reportService.exportCSV(orders);
+    const rev = reportService.revenue(orders);
+    setMessage(`Revenue: ${rev}`);
   }
 
   return (
     <div className="page">
-      <h1>Bad Commerce Admin</h1>
-      <p>Intentionally bad architecture for SOLID refactoring exercise.</p>
+      <h1>Commerce Admin (Refactored for SOLID)</h1>
+      <p>Component now focuses on UI; services handle business and infra.</p>
 
       <div className="card">
         <h2>Create Order</h2>
@@ -114,7 +96,7 @@ export default function App() {
         <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
 
         <label>Payment</label>
-        <select value={payment} onChange={(e) => setPayment(e.target.value)}>
+        <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
           <option value="card">card</option>
           <option value="paypal">paypal</option>
           <option value="cod">cod</option>
