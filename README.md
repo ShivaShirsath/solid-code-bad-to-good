@@ -1,6 +1,6 @@
 # React + Vite SOLID Exercise (Resolved Version)
 
-Hello only!
+Hello this is shiva ✌🏻
 
 This project started from a deliberately bad, real-world style e-commerce admin flow and is now refactored to follow SOLID principles.
 
