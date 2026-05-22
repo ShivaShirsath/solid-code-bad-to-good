@@ -29,7 +29,7 @@ export default function App() {
     else if (Number(qty) > 10) total *= 0.85;
 
     if (payment === "card") {
-      console.log("Calling card gateway directly [v2]");
+      console.log("Calling card gateway directly [v2] // feature-branch fix");
     } else if (payment === "paypal") {
       console.log("Calling paypal API directly");
     } else if (payment === "cod") {
